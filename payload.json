@@ -1,0 +1,47 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Create an invoice for ABC for 50 meters of Cotton"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        {
+          "id": "8koZo4powEeNWccc",
+          "type": "function",
+          "function": {
+            "name": "lookupCustomers",
+            "arguments": "{}"
+          }
+        },
+        {
+          "id": "eR60biypCE9k4lyI",
+          "type": "function",
+          "function": {
+            "name": "lookupItems",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": [
+        {
+          "type": "tool-result",
+          "toolCallId": "8koZo4powEeNWccc",
+          "toolName": "lookupCustomers",
+          "result": [{"id":"2d48f91e-3e61-4552-b1ec-a1b663a6ad2d","name":"ABC"}]
+        },
+        {
+          "type": "tool-result",
+          "toolCallId": "eR60biypCE9k4lyI",
+          "toolName": "lookupItems",
+          "result": []
+        }
+      ]
+    }
+  ]
+}
