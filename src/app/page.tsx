@@ -1,140 +1,230 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { Send, Bot, User, Calculator, Search, AlertCircle } from "lucide-react";
+import { Send, Bot, User, Calculator, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useEffect, useRef, useState, KeyboardEvent } from "react";
+import { Sidebar } from "@/components/Sidebar";
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const { messages, status, sendMessage } = useChat();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [chatId, setChatId] = useState(() => crypto.randomUUID());
+  
+  const { messages, status, sendMessage, setMessages } = useChat({
+    id: chatId,
+    fetch: async (url: any, options: any) => {
+      const res = await fetch(`${url}?chatId=${chatId}`, options);
+      window.dispatchEvent(new Event('chat-updated'));
+      return res;
+    }
+  } as any);
+
+  const handleSelectChat = async (id: string) => {
+    setChatId(id);
+    try {
+      const res = await fetch(`/api/chats/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messages) {
+          setMessages(data.messages.map((m: any) => ({ id: m.id, ...m.content })));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch chat history", err);
+    }
+  };
   
   const isLoading = status === 'submitted' || status === 'streaming';
-  
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: 'smooth'
+    });
+  }, [messages, status]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  }, [input]);
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
     sendMessage({ text: input });
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
   };
 
   return (
-    <div className="flex h-screen bg-neutral-100 items-center justify-center p-4">
-      <Card className="w-full max-w-4xl h-[90vh] flex flex-col shadow-xl border-neutral-200">
-        <CardHeader className="border-b bg-white rounded-t-xl">
-          <CardTitle className="flex items-center gap-2 text-primary">
-            <Calculator className="w-6 h-6 text-blue-600" />
-            <span className="font-bold text-xl text-neutral-800">QuickInvoice AI</span>
-          </CardTitle>
-          <p className="text-sm text-neutral-500">Your intelligent accounting assistant powered by Gemini 2.5</p>
-        </CardHeader>
-        
-        <ScrollArea className="flex-1 p-4 bg-neutral-50" ref={scrollRef}>
-          <div className="flex flex-col gap-4 max-w-3xl mx-auto w-full pb-4">
+    <div className="flex min-h-screen bg-background selection:bg-primary/20">
+      <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} onSelectChat={handleSelectChat} />
+
+      <main className="flex-1 flex flex-col relative min-h-screen min-w-0 bg-background transition-all duration-300">
+        {/* Header (Mobile / Sidebar Toggle) */}
+        <div className="sticky top-0 left-0 right-0 h-14 bg-background/80 backdrop-blur-md z-30 flex items-center px-4 md:hidden border-b border-border">
+           <span className="font-semibold text-foreground flex items-center gap-2">
+             <Calculator className="w-5 h-5 text-primary" />
+             QuickInvoice AI
+           </span>
+        </div>
+
+        <div className="flex-1 w-full" ref={scrollRef}>
+          <div className="flex flex-col w-full pb-36 pt-16 md:pt-8 px-4">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center text-center h-full space-y-4 mt-20 text-neutral-400">
-                <Bot className="w-16 h-16 text-blue-200" />
-                <h3 className="text-lg font-medium text-neutral-600">How can I help your business today?</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm w-full max-w-lg">
-                  <div className="p-3 bg-white rounded-lg border shadow-sm text-left">
+              <div className="flex flex-col items-center justify-center text-center space-y-6 mt-[15vh]">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2">
+                  <Calculator className="w-8 h-8 text-primary" />
+                </div>
+                <h1 className="text-3xl font-medium text-foreground tracking-tight">How can I help you today?</h1>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm w-full max-w-2xl mt-8">
+                  <button onClick={() => setInput("Create an invoice for ABC Corp for 50 meters of Silk Fabric")} className="p-4 bg-muted/30 hover:bg-muted/60 transition-colors rounded-2xl border border-border/50 text-left text-muted-foreground hover:text-foreground">
                     "Create an invoice for ABC Corp for 50 meters of Silk Fabric"
-                  </div>
-                  <div className="p-3 bg-white rounded-lg border shadow-sm text-left">
+                  </button>
+                  <button onClick={() => setInput("What is the phone number for XYZ Logistics?")} className="p-4 bg-muted/30 hover:bg-muted/60 transition-colors rounded-2xl border border-border/50 text-left text-muted-foreground hover:text-foreground">
                     "What is the phone number for XYZ Logistics?"
-                  </div>
+                  </button>
                 </div>
               </div>
             )}
             
-            {messages.map((m) => (
-              <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`flex gap-3 max-w-[80%] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'}`}>
-                    {m.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-                  </div>
-                  <div className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <div className={`p-4 rounded-2xl shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border rounded-tl-none text-neutral-800'}`}>
-                      
-                      {/* Check if new v6 parts are available, fallback to old text otherwise */}
-                      {m.parts ? m.parts.map((part, i) => {
-                        if (part.type === 'text') {
-                          return <p key={i} className="whitespace-pre-wrap leading-relaxed">{part.text}</p>;
-                        }
-                        if (part.type.startsWith('tool-')) {
-                          const toolName = part.type.replace('tool-', '');
-                          const toolPart = part as any;
-                          return (
-                            <div key={i} className="mt-3 space-y-2">
-                              <div className="bg-neutral-100 rounded-md p-2 text-xs font-mono border text-neutral-600">
-                                <div className="flex items-center gap-1 mb-1 font-semibold text-neutral-700">
-                                  {toolName === 'createInvoice' ? <Calculator className="w-3 h-3" /> : <Search className="w-3 h-3" />}
-                                  {toolName}
-                                </div>
-                                <div className="text-neutral-500 overflow-x-auto">
-                                  {JSON.stringify(toolPart.input)}
-                                </div>
-                                {toolPart.state === 'output-available' && (
-                                  <div className="mt-1 pt-1 border-t border-neutral-200 text-green-700">
-                                    ✓ Result: {JSON.stringify(toolPart.output).substring(0, 100)}...
+            <div className="max-w-3xl mx-auto w-full space-y-6">
+              {messages.map((m) => (
+                <div key={m.id} className="group w-full text-foreground">
+                  <div className="flex gap-4 md:gap-6">
+                    {/* Avatar */}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${m.role === 'user' ? 'bg-muted text-muted-foreground' : 'bg-primary/20 text-primary'}`}>
+                      {m.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+                    </div>
+                    
+                    {/* Message Content */}
+                    <div className="flex-1 space-y-2 min-w-0">
+                      <div className="font-semibold text-sm select-none">
+                         {m.role === 'user' ? 'You' : 'QuickInvoice'}
+                      </div>
+                      <div className="prose prose-neutral dark:prose-invert max-w-none text-foreground leading-relaxed">
+                        {(() => {
+                          const partsToRender = (m as any).parts || (Array.isArray((m as any).content) ? (m as any).content : null);
+                          if (partsToRender) {
+                            return partsToRender.map((part: any, i: number) => {
+                              if (part.type === 'text') {
+                                return <div key={i} className="prose prose-neutral dark:prose-invert max-w-none prose-sm md:prose-base"><ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown></div>;
+                              }
+                              if (part.type?.startsWith('tool-')) {
+                                const toolName = part.type.replace('tool-', '') || part.toolName;
+                                const toolPart = part as any;
+                                const inputArgs = toolPart.input || toolPart.args;
+                                const stateStr = toolPart.state || (part.type === 'tool-result' ? 'output-available' : 'running');
+                                
+                                return (
+                                  <div key={i} className="my-3">
+                                    <div className="inline-flex flex-col bg-muted/30 rounded-xl border border-border/50 text-sm overflow-hidden w-full max-w-lg">
+                                      <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/50 border-b border-border/50 font-medium text-foreground">
+                                        {toolName === 'createInvoice' ? <Calculator className="w-4 h-4 text-primary" /> : <Search className="w-4 h-4 text-primary" />}
+                                        Running {toolName}...
+                                      </div>
+                                      <div className="px-4 py-3 text-muted-foreground overflow-x-auto text-xs font-mono">
+                                        {typeof inputArgs === 'string' ? inputArgs : JSON.stringify(inputArgs)}
+                                      </div>
+                                      {stateStr === 'output-available' && (
+                                        <div className="px-4 py-2.5 border-t border-border/50 bg-primary/5 text-primary text-xs font-medium flex items-center gap-2">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                                          Completed successfully
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                )}
-                              </div>
+                                );
+                              }
+                              return null;
+                            });
+                          }
+                          const textContent = typeof (m as any).content === 'string' ? (m as any).content : (typeof (m as any).text === 'string' ? (m as any).text : "");
+                          return (
+                            <div className="prose prose-neutral dark:prose-invert max-w-none prose-sm md:prose-base">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{textContent}</ReactMarkdown>
                             </div>
                           );
-                        }
-                        return null;
-                      }) : (
-                        <p className="whitespace-pre-wrap leading-relaxed">{(m as any).content || ""}</p>
-                      )}
+                        })()}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            {isLoading && (
-               <div className="flex justify-start">
-                  <div className="flex gap-3 max-w-[80%]">
-                     <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-green-600 text-white animate-pulse">
-                        <Bot className="w-5 h-5" />
-                     </div>
-                     <div className="p-4 rounded-2xl bg-white border shadow-sm rounded-tl-none">
-                        <span className="flex gap-1">
-                           <span className="w-2 h-2 bg-neutral-300 rounded-full animate-bounce"></span>
-                           <span className="w-2 h-2 bg-neutral-300 rounded-full animate-bounce delay-100"></span>
-                           <span className="w-2 h-2 bg-neutral-300 rounded-full animate-bounce delay-200"></span>
-                        </span>
-                     </div>
+              ))}
+              
+              {/* Loading Indicator */}
+              {isLoading && (
+                <div className="group w-full text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex gap-4 md:gap-6">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-primary/20 text-primary">
+                      <Bot className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm select-none mb-2">QuickInvoice</div>
+                      <div className="flex gap-1 items-center h-6">
+                        <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"></span>
+                        <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce delay-150"></span>
+                        <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce delay-300"></span>
+                      </div>
+                    </div>
                   </div>
-               </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
-        </ScrollArea>
+        </div>
 
-        <CardFooter className="border-t bg-white p-4 rounded-b-xl">
-          <form onSubmit={handleSubmit} className="flex w-full items-center gap-2 max-w-3xl mx-auto">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask the AI Accountant..."
-              className="flex-1 border-neutral-300 focus-visible:ring-blue-500 text-base py-6 rounded-full px-6 shadow-inner"
-            />
-            <Button type="submit" disabled={isLoading || !input.trim()} size="icon" className="h-12 w-12 rounded-full bg-blue-600 hover:bg-blue-700 shadow-md">
-              <Send className="w-5 h-5" />
-            </Button>
-          </form>
-        </CardFooter>
-      </Card>
+        {/* Floating Input Area */}
+        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-10 pb-6 px-4 z-20">
+          <div className="max-w-3xl mx-auto relative">
+            <div className="relative flex flex-col w-full bg-card border border-border shadow-[0_0_15px_rgba(0,0,0,0.05)] dark:shadow-none rounded-3xl overflow-hidden focus-within:ring-1 focus-within:ring-primary/30 transition-all duration-200">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about your finances, generate invoices..."
+                className="w-full resize-none bg-transparent border-0 focus:ring-0 text-foreground px-4 py-4 max-h-[200px] min-h-[56px] text-base placeholder:text-muted-foreground/70"
+                rows={1}
+                style={{ overflowY: input.length > 100 ? 'auto' : 'hidden' }}
+              />
+              <div className="flex justify-between items-center px-3 pb-3 pt-1">
+                <div className="text-xs text-muted-foreground px-2">
+                  Use <kbd className="font-sans bg-muted px-1 py-0.5 rounded border border-border/50 text-[10px]">Shift</kbd> + <kbd className="font-sans bg-muted px-1 py-0.5 rounded border border-border/50 text-[10px]">Return</kbd> for new line
+                </div>
+                <Button 
+                  onClick={() => handleSubmit()} 
+                  disabled={isLoading || !input.trim()} 
+                  size="icon" 
+                  className="h-8 w-8 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-50 transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="text-center text-xs text-muted-foreground mt-3 select-none">
+              AI can make mistakes. Check important financial info.
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

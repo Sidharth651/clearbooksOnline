@@ -1,7 +1,6 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { streamText, tool } from 'ai';
+import { generateText, tool } from 'ai';
 import { z } from 'zod';
-
 import fs from 'fs';
 import path from 'path';
 
@@ -24,16 +23,22 @@ if (fs.existsSync(envPath)) {
       apiKey: process.env.OPENROUTER_API_KEY,
     });
     
-    console.log('Testing openrouter streamText...');
-    const result = streamText({
+    console.log('Testing openrouter with tools...');
+    const result = await generateText({
       model: openrouter('openai/gpt-oss-120b:free'),
-      messages: [{ role: 'user', content: 'Say hello in 5 words' }]
+      messages: [{ role: 'user', content: 'What is 2+2?' }],
+      tools: {
+        calculate: tool({
+          description: 'Calculate math expressions',
+          parameters: z.object({ expression: z.string() }),
+          execute: async ({ expression }) => {
+            return eval(expression);
+          }
+        })
+      }
     });
-
-    for await (const chunk of result.textStream) {
-      process.stdout.write(chunk);
-    }
-    console.log('\n--- STREAM FINISHED ---');
+    console.log('SUCCESS:', result.text);
+    console.log('Tool calls:', result.toolCalls);
   } catch (err) {
     console.error('ERROR:', err.message);
   }

@@ -1,20 +1,53 @@
-import { google } from '@ai-sdk/google';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+
+// ... other imports stay the same (we'll just replace line 1 and update line 44)
 import { streamText, tool, convertToModelMessages, stepCountIs } from 'ai';
 import { z } from 'zod';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
+import { supabase as adminSupabase } from '@/lib/supabase'; // Using the original client for admin tasks like tools if needed, but better to use the user's client if they have RLS. For now, since RLS is disabled, either is fine.
 
-// Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
+  const url = new URL(req.url);
+  const providedChatId = url.searchParams.get('chatId');
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // In AI SDK v6, messages use `parts` format (UIMessage[]).
-  // convertToModelMessages handles the UIMessage -> ModelMessage conversion.
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const lastMessage = messages[messages.length - 1];
+  const chatId = providedChatId || crypto.randomUUID();
+
+  // Check if chat exists
+  const { data: existingChat } = await supabase.from('chats').select('id').eq('id', chatId).single();
+  
+  if (!existingChat) {
+    await supabase.from('chats').insert({
+      id: chatId,
+      user_id: user.id,
+      title: (lastMessage.content || lastMessage.text || "New Chat").substring(0, 40),
+    });
+  }
+
+  // Save User Message
+  await supabase.from('chat_messages').insert({
+    chat_id: chatId,
+    role: 'user',
+    content: lastMessage,
+  });
+
   const modelMessages = await convertToModelMessages(messages);
 
+  const openrouter = createOpenRouter({
+    apiKey: process.env.OPENROUTER_API_KEY,
+  });
+
   const result = streamText({
-    model: google('gemini-2.5-flash'),
+    model: openrouter('openai/gpt-oss-120b:free'),
     messages: modelMessages,
     stopWhen: stepCountIs(5),
     system: `You are QuickInvoice AI, an expert, incredibly fast AI accountant assistant.
@@ -28,6 +61,37 @@ export async function POST(req: Request) {
     
     Be concise, helpful, and professional.`,
     tools: {
+      lookupInvoices: tool({
+        description: 'Fetch recent sales invoices from the database',
+        inputSchema: z.object({
+          limit: z.number().optional().describe('Number of recent invoices to fetch. Default is 5.'),
+        }),
+        execute: async ({ limit }) => {
+          const fetchLimit = limit || 5;
+          const { data, error } = await supabase
+            .from('transactions')
+            .select(`
+              id,
+              voucher_no,
+              date,
+              total_amount,
+              party:parties(name)
+            `)
+            .eq('voucher_type', 'SALES')
+            .order('date', { ascending: false })
+            .limit(fetchLimit);
+            
+          if (error) throw new Error(error.message);
+          
+          return data.map((tx: any) => ({
+            id: tx.id,
+            voucherNo: tx.voucher_no,
+            date: tx.date,
+            totalAmount: tx.total_amount,
+            customerName: tx.party?.name || 'Unknown'
+          }));
+        },
+      }),
       lookupCustomers: tool({
         description: 'Search for customers by name',
         inputSchema: z.object({
@@ -40,7 +104,6 @@ export async function POST(req: Request) {
             .select('id, name, phone, address')
             .ilike('name', `%${query}%`)
             .limit(5);
-          
           if (error) throw new Error(error.message);
           return data;
         },
@@ -57,7 +120,6 @@ export async function POST(req: Request) {
             .select('id, name, default_rate, unit')
             .ilike('name', `%${query}%`)
             .limit(5);
-          
           if (error) throw new Error(error.message);
           return data;
         },
@@ -76,11 +138,9 @@ export async function POST(req: Request) {
         }),
         execute: async ({ customerId, date, items }) => {
           const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
-          
           const transactionId = crypto.randomUUID();
 
-          // Generate next sequential voucher number (same logic as desktop app)
-          const prefix = 'S'; // SALES prefix
+          const prefix = 'S';
           const { data: existingVouchers } = await supabase
             .from('transactions')
             .select('voucher_no')
@@ -130,11 +190,23 @@ export async function POST(req: Request) {
             success: true,
             voucherNo: voucherNo,
             totalAmount: totalAmount,
-            message: "Invoice saved successfully. The desktop app will automatically process the ledgers shortly."
+            message: "Invoice saved successfully."
           };
         },
       }),
     },
+    onFinish: async ({ response }) => {
+      // Save the AI's response messages (which include tool calls and tool results)
+      if (response && response.messages) {
+        for (const message of response.messages) {
+           await supabase.from('chat_messages').insert({
+             chat_id: chatId,
+             role: message.role,
+             content: message
+           });
+        }
+      }
+    }
   });
 
   return result.toUIMessageStreamResponse();
