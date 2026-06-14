@@ -1,42 +1,27 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
-import { Send, Bot, User, Calculator, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { useEffect, useRef, useState, KeyboardEvent } from "react";
+import { useState, useRef, useEffect } from "react";
+import { Calculator } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
+import { useChatSession } from "@/hooks/useChatSession";
+import { ChatEmptyState } from "@/components/chat/ChatEmptyState";
+import { ChatMessageList } from "@/components/chat/ChatMessageList";
+import { ChatInput } from "@/components/chat/ChatInput";
 
 export default function Home() {
   const [input, setInput] = useState("");
+  const [files, setFiles] = useState<FileList | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chatId, setChatId] = useState(() => crypto.randomUUID());
   
-  const { messages, status, sendMessage, setMessages } = useChat({
-    id: chatId,
-    fetch: async (url: any, options: any) => {
-      const res = await fetch(`${url}?chatId=${chatId}`, options);
-      window.dispatchEvent(new Event('chat-updated'));
-      return res;
-    }
-  } as any);
+  const {
+    messages,
+    status,
+    sendMessage,
+    addToolResult,
+    handleSelectChat,
+    sendRawMessage
+  } = useChatSession();
 
-  const handleSelectChat = async (id: string) => {
-    setChatId(id);
-    try {
-      const res = await fetch(`/api/chats/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.messages) {
-          setMessages(data.messages.map((m: any) => ({ id: m.id, ...m.content })));
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch chat history", err);
-    }
-  };
-  
   const isLoading = status === 'submitted' || status === 'streaming';
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -48,7 +33,6 @@ export default function Home() {
     });
   }, [messages, status]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -56,20 +40,13 @@ export default function Home() {
     }
   }, [input]);
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    sendMessage({ text: input });
+    await sendMessage(input, files);
     setInput("");
+    setFiles(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-    }
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
     }
   };
 
@@ -88,142 +65,28 @@ export default function Home() {
 
         <div className="flex-1 w-full" ref={scrollRef}>
           <div className="flex flex-col w-full pb-36 pt-16 md:pt-8 px-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center text-center space-y-6 mt-[15vh]">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2">
-                  <Calculator className="w-8 h-8 text-primary" />
-                </div>
-                <h1 className="text-3xl font-medium text-foreground tracking-tight">How can I help you today?</h1>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm w-full max-w-2xl mt-8">
-                  <button onClick={() => setInput("Create an invoice for ABC Corp for 50 meters of Silk Fabric")} className="p-4 bg-muted/30 hover:bg-muted/60 transition-colors rounded-2xl border border-border/50 text-left text-muted-foreground hover:text-foreground">
-                    "Create an invoice for ABC Corp for 50 meters of Silk Fabric"
-                  </button>
-                  <button onClick={() => setInput("What is the phone number for XYZ Logistics?")} className="p-4 bg-muted/30 hover:bg-muted/60 transition-colors rounded-2xl border border-border/50 text-left text-muted-foreground hover:text-foreground">
-                    "What is the phone number for XYZ Logistics?"
-                  </button>
-                </div>
-              </div>
+            {messages.length === 0 ? (
+              <ChatEmptyState onSelectExample={(text) => setInput(text)} />
+            ) : (
+              <ChatMessageList 
+                messages={messages} 
+                isLoading={isLoading} 
+                addToolResult={addToolResult} 
+                sendMessage={sendRawMessage} 
+              />
             )}
-            
-            <div className="max-w-3xl mx-auto w-full space-y-6">
-              {messages.map((m) => (
-                <div key={m.id} className="group w-full text-foreground">
-                  <div className="flex gap-4 md:gap-6">
-                    {/* Avatar */}
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${m.role === 'user' ? 'bg-muted text-muted-foreground' : 'bg-primary/20 text-primary'}`}>
-                      {m.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-                    </div>
-                    
-                    {/* Message Content */}
-                    <div className="flex-1 space-y-2 min-w-0">
-                      <div className="font-semibold text-sm select-none">
-                         {m.role === 'user' ? 'You' : 'QuickInvoice'}
-                      </div>
-                      <div className="prose prose-neutral dark:prose-invert max-w-none text-foreground leading-relaxed">
-                        {(() => {
-                          const partsToRender = (m as any).parts || (Array.isArray((m as any).content) ? (m as any).content : null);
-                          if (partsToRender) {
-                            return partsToRender.map((part: any, i: number) => {
-                              if (part.type === 'text') {
-                                return <div key={i} className="prose prose-neutral dark:prose-invert max-w-none prose-sm md:prose-base"><ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown></div>;
-                              }
-                              if (part.type?.startsWith('tool-')) {
-                                const toolName = part.type.replace('tool-', '') || part.toolName;
-                                const toolPart = part as any;
-                                const inputArgs = toolPart.input || toolPart.args;
-                                const stateStr = toolPart.state || (part.type === 'tool-result' ? 'output-available' : 'running');
-                                
-                                return (
-                                  <div key={i} className="my-3">
-                                    <div className="inline-flex flex-col bg-muted/30 rounded-xl border border-border/50 text-sm overflow-hidden w-full max-w-lg">
-                                      <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/50 border-b border-border/50 font-medium text-foreground">
-                                        {toolName === 'createInvoice' ? <Calculator className="w-4 h-4 text-primary" /> : <Search className="w-4 h-4 text-primary" />}
-                                        Running {toolName}...
-                                      </div>
-                                      <div className="px-4 py-3 text-muted-foreground overflow-x-auto text-xs font-mono">
-                                        {typeof inputArgs === 'string' ? inputArgs : JSON.stringify(inputArgs)}
-                                      </div>
-                                      {stateStr === 'output-available' && (
-                                        <div className="px-4 py-2.5 border-t border-border/50 bg-primary/5 text-primary text-xs font-medium flex items-center gap-2">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                                          Completed successfully
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            });
-                          }
-                          const textContent = typeof (m as any).content === 'string' ? (m as any).content : (typeof (m as any).text === 'string' ? (m as any).text : "");
-                          return (
-                            <div className="prose prose-neutral dark:prose-invert max-w-none prose-sm md:prose-base">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{textContent}</ReactMarkdown>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              {/* Loading Indicator */}
-              {isLoading && (
-                <div className="group w-full text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex gap-4 md:gap-6">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-primary/20 text-primary">
-                      <Bot className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm select-none mb-2">QuickInvoice</div>
-                      <div className="flex gap-1 items-center h-6">
-                        <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"></span>
-                        <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce delay-150"></span>
-                        <span className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce delay-300"></span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
-        {/* Floating Input Area */}
-        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-10 pb-6 px-4 z-20">
-          <div className="max-w-3xl mx-auto relative">
-            <div className="relative flex flex-col w-full bg-card border border-border shadow-[0_0_15px_rgba(0,0,0,0.05)] dark:shadow-none rounded-3xl overflow-hidden focus-within:ring-1 focus-within:ring-primary/30 transition-all duration-200">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask about your finances, generate invoices..."
-                className="w-full resize-none bg-transparent border-0 focus:ring-0 text-foreground px-4 py-4 max-h-[200px] min-h-[56px] text-base placeholder:text-muted-foreground/70"
-                rows={1}
-                style={{ overflowY: input.length > 100 ? 'auto' : 'hidden' }}
-              />
-              <div className="flex justify-between items-center px-3 pb-3 pt-1">
-                <div className="text-xs text-muted-foreground px-2">
-                  Use <kbd className="font-sans bg-muted px-1 py-0.5 rounded border border-border/50 text-[10px]">Shift</kbd> + <kbd className="font-sans bg-muted px-1 py-0.5 rounded border border-border/50 text-[10px]">Return</kbd> for new line
-                </div>
-                <Button 
-                  onClick={() => handleSubmit()} 
-                  disabled={isLoading || !input.trim()} 
-                  size="icon" 
-                  className="h-8 w-8 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-50 transition-all"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="text-center text-xs text-muted-foreground mt-3 select-none">
-              AI can make mistakes. Check important financial info.
-            </div>
-          </div>
-        </div>
+        <ChatInput 
+          input={input}
+          setInput={setInput}
+          files={files}
+          setFiles={setFiles}
+          isLoading={isLoading}
+          onSubmit={handleSubmit}
+          textareaRef={textareaRef}
+        />
       </main>
     </div>
   );

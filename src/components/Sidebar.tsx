@@ -1,6 +1,8 @@
 "use client";
 
-import { Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings, Search, LogOut, Trash2 } from "lucide-react";
+import { Plus, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings, Search, LogOut, Trash2, Brain, ChevronRight } from "lucide-react";
+import { MemoryPanel } from "./MemoryPanel";
+import { SettingsModal } from "./SettingsModal";
 import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
 import { Input } from "./ui/input";
@@ -12,6 +14,8 @@ type ChatInfo = { id: string, title: string, created_at: string };
 
 export function Sidebar({ isOpen, onToggle, onSelectChat }: { isOpen: boolean, onToggle: () => void, onSelectChat?: (id: string) => void }) {
   const [chats, setChats] = useState<ChatInfo[]>([]);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const supabase = createClient();
   const router = useRouter();
 
@@ -116,15 +120,19 @@ export function Sidebar({ isOpen, onToggle, onSelectChat }: { isOpen: boolean, o
       </ScrollArea>
 
       <div className="p-4 border-t border-sidebar-border mt-auto flex flex-col gap-2">
-        <Button variant="ghost" className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-xl">
+        <Button variant="ghost" onClick={() => setSettingsOpen(true)} className={`w-full justify-start rounded-xl ${settingsOpen ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
           <Settings className="w-4 h-4 mr-2" />
           Settings
         </Button>
-        <Button variant="ghost" onClick={handleLogout} className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl">
-          <LogOut className="w-4 h-4 mr-2" />
-          Logout
-        </Button>
       </div>
+
+      <MemoryPanel isOpen={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
+      <SettingsModal 
+        isOpen={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+        onOpenMemory={() => setMemoryPanelOpen(true)}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }

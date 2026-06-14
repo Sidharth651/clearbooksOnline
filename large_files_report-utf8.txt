@@ -1,0 +1,10 @@
+﻿
+Lines Path                                              
+----- ----                                              
+ 1031 D:\work\ClearBooksOnline\src\lib\mcp-tools.ts     
+ 1025 D:\work\ClearBooksOnline\src\lib\ai-tools.ts      
+  648 D:\work\ClearBooksOnline\src\app\page.tsx         
+  537 D:\work\ClearBooksOnline\src\utils\invoicePrint.ts
+
+
+
