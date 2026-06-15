@@ -12,26 +12,42 @@ import { NextRequest } from "next/server";
 // ---------------------------------------------------------------------------
 
 /**
- * Validates the MCP_API_KEY for external clients (Claude Desktop, Cursor, etc.)
- * Returns true if the request carries a valid bearer token.
+ * Validates the MCP_API_KEY for external clients (Claude Desktop, Cursor, Claude.ai web, etc.)
+ * Accepts the key via:
+ *   - Authorization header: `Authorization: Bearer <key>`  (Claude Desktop)
+ *   - URL query parameter:  `?key=<key>`                   (Claude.ai web UI)
  */
 function isValidApiKey(req: NextRequest): boolean {
   const mcpApiKey = process.env.MCP_API_KEY;
   if (!mcpApiKey) return false;
+
+  // 1. Check Authorization header (Claude Desktop / Cursor)
   const authHeader = req.headers.get('authorization') ?? '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  return token === mcpApiKey;
+  const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (headerToken === mcpApiKey) return true;
+
+  // 2. Check ?key= query param (Claude.ai web UI — doesn't support custom headers)
+  const urlKey = new URL(req.url).searchParams.get('key') ?? '';
+  return urlKey === mcpApiKey;
 }
 
 /**
  * Builds an authenticated Supabase client for an external MCP request.
- * The caller must supply their Supabase access token in the
- * `X-Supabase-Token` header (obtained from any Supabase login flow).
+ * Accepts the user's Supabase access token via:
+ *   - X-Supabase-Token header  (Claude Desktop)
+ *   - ?token= query param      (Claude.ai web UI)
  */
 function createExternalSupabaseClient(req: NextRequest) {
-  const userToken = req.headers.get('x-supabase-token');
+  const url = new URL(req.url);
+  const userToken =
+    req.headers.get('x-supabase-token') ??
+    url.searchParams.get('token') ??
+    '';
+
   if (!userToken) {
-    throw new Error('Missing X-Supabase-Token header. Provide your Supabase access token.');
+    throw new Error(
+      'Missing Supabase token. Provide it via the X-Supabase-Token header or ?token= query param.'
+    );
   }
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,6 +59,7 @@ function createExternalSupabaseClient(req: NextRequest) {
     }
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // MCP server factory — created fresh per request (serverless-safe)
