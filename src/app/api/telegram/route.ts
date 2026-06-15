@@ -156,9 +156,8 @@ export async function POST(req: Request) {
     ...mcpTools,
   };
 
-  // ── AI call ───────────────────────────────────────────────────────────────
-  const google = createGoogleGenerativeAI({
-    apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  const openrouter = createOpenRouter({
+    apiKey: process.env.OPENROUTER_API_KEY,
   });
 
   const systemPrompt = `You are QuickInvoice AI, an expert AI accountant assistant.
@@ -187,7 +186,7 @@ Today's date is ${new Date().toISOString().split('T')[0]}.${memoryBlock}`;
   let replyText = '';
   try {
     const result = await generateText({
-      model: google('gemini-2.0-flash'),
+      model: openrouter('openai/gpt-4o-mini'), // Free/cheap fast model that supports tools well
       messages,
       system: systemPrompt,
       tools: allTools,
