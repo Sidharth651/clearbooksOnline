@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -14,8 +14,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QuickInvoice",
-  description: "Fast and easy invoice generation and management.",
+  title: "ClearBooks AI Chat",
+  description: "AI-powered accounting chat application.",
+  applicationName: "ClearBooks",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "ClearBooks",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#3b82f6",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({

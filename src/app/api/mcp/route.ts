@@ -2,42 +2,78 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getMCPToolsConfig } from "@/lib/mcp-tools";
-import { createClient } from '@/lib/supabase/server';
+import { createClient as createCookieClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { NextRequest } from "next/server";
 
-// We store the transport globally so it persists across GET / POST requests
-// in development mode.
-const globalForMCP = globalThis as unknown as {
-  mcpTransport?: WebStandardStreamableHTTPServerTransport;
-};
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
 
-async function getTransport() {
-  if (globalForMCP.mcpTransport) {
-    return globalForMCP.mcpTransport;
+/**
+ * Validates the MCP_API_KEY for external clients (Claude Desktop, Cursor, etc.)
+ * Returns true if the request carries a valid bearer token.
+ */
+function isValidApiKey(req: NextRequest): boolean {
+  const mcpApiKey = process.env.MCP_API_KEY;
+  if (!mcpApiKey) return false;
+  const authHeader = req.headers.get('authorization') ?? '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  return token === mcpApiKey;
+}
+
+/**
+ * Builds an authenticated Supabase client for an external MCP request.
+ * The caller must supply their Supabase access token in the
+ * `X-Supabase-Token` header (obtained from any Supabase login flow).
+ */
+function createExternalSupabaseClient(req: NextRequest) {
+  const userToken = req.headers.get('x-supabase-token');
+  if (!userToken) {
+    throw new Error('Missing X-Supabase-Token header. Provide your Supabase access token.');
   }
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: { Authorization: `Bearer ${userToken}` },
+      },
+    }
+  );
+}
 
-  const server = new Server({ name: "quickinvoice-mcp", version: "1.0.0" }, { capabilities: { tools: {} } });
+// ---------------------------------------------------------------------------
+// MCP server factory — created fresh per request (serverless-safe)
+// ---------------------------------------------------------------------------
+
+async function createMCPServer(req: NextRequest) {
+  // Determine auth mode: API key = external client, otherwise = web app cookie
+  const external = isValidApiKey(req);
+
+  const server = new Server(
+    { name: 'quickinvoice-mcp', version: '1.0.0' },
+    { capabilities: { tools: {} } }
+  );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // We instantiate tools using a dummy supabase client just to get their schema
-    // since the execute function isn't called here.
     const toolsConfig = getMCPToolsConfig(null, '');
-    const tools = Object.entries(toolsConfig).map(([name, config]) => {
-      return {
-        name,
-        description: config.description,
-        inputSchema: zodToJsonSchema(config.inputSchema),
-      };
-    });
-
+    const tools = Object.entries(toolsConfig).map(([name, config]) => ({
+      name,
+      description: config.description,
+      inputSchema: zodToJsonSchema(config.inputSchema),
+    }));
     return { tools: tools as any };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const supabase = await createClient(); // Authenticated Supabase Client using headers
+    // Build the right Supabase client depending on auth mode
+    const supabase = external
+      ? createExternalSupabaseClient(req)
+      : await createCookieClient();
+
     let companyId = (request.params.arguments as any)?.companyId || '';
-    
     if (!companyId) {
       const { data: companies } = await supabase.from('companies').select('id').limit(1);
       if (companies && companies.length > 0) {
@@ -46,7 +82,6 @@ async function getTransport() {
     }
 
     const toolsConfig = getMCPToolsConfig(supabase, companyId);
-    
     const toolName = request.params.name;
     const tool = (toolsConfig as any)[toolName];
 
@@ -58,12 +93,12 @@ async function getTransport() {
       const args = request.params.arguments || {};
       const result = await tool.execute(args);
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       };
     } catch (error: any) {
       return {
         isError: true,
-        content: [{ type: "text", text: `Error: ${error.message}` }],
+        content: [{ type: 'text', text: `Error: ${error.message}` }],
       };
     }
   });
@@ -71,18 +106,36 @@ async function getTransport() {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => crypto.randomUUID(),
   });
-  
+
   await server.connect(transport);
-  globalForMCP.mcpTransport = transport;
   return transport;
 }
 
+// ---------------------------------------------------------------------------
+// Route handlers
+// ---------------------------------------------------------------------------
+
 export async function GET(req: NextRequest) {
-  const transport = await getTransport();
+  // Reject requests that have an MCP_API_KEY set but supply the wrong token
+  if (process.env.MCP_API_KEY && !isValidApiKey(req)) {
+    // Allow cookie-auth (web app) to pass through without the API key
+    // Only block if the caller supplied a wrong Bearer token
+    const authHeader = req.headers.get('authorization') ?? '';
+    if (authHeader.startsWith('Bearer ')) {
+      return new Response('Unauthorized: invalid MCP API key', { status: 401 });
+    }
+  }
+  const transport = await createMCPServer(req);
   return transport.handleRequest(req);
 }
 
 export async function POST(req: NextRequest) {
-  const transport = await getTransport();
+  if (process.env.MCP_API_KEY && !isValidApiKey(req)) {
+    const authHeader = req.headers.get('authorization') ?? '';
+    if (authHeader.startsWith('Bearer ')) {
+      return new Response('Unauthorized: invalid MCP API key', { status: 401 });
+    }
+  }
+  const transport = await createMCPServer(req);
   return transport.handleRequest(req);
 }

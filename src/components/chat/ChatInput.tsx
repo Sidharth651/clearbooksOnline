@@ -39,7 +39,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-10 pb-6 px-4 z-20">
+    <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-10 pb-4 sm:pb-6 px-4 z-20">
       <div className="max-w-3xl mx-auto relative">
         {files && files.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2 p-2 bg-muted/30 rounded-xl border border-border/50">
@@ -49,7 +49,7 @@ export function ChatInput({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5 hover:bg-muted"
+                  className="h-6 w-6 hover:bg-muted"
                   onClick={() => {
                     const dt = new DataTransfer();
                     Array.from(files).forEach((f, index) => {
@@ -89,10 +89,10 @@ export function ChatInput({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                className="h-10 w-10 rounded-full text-muted-foreground hover:text-foreground"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Paperclip className="w-4 h-4" />
+                <Paperclip className="w-5 h-5" />
               </Button>
               <div className="text-xs text-muted-foreground hidden sm:block">
                 Use <kbd className="font-sans bg-muted px-1 py-0.5 rounded border border-border/50 text-[10px]">Shift</kbd> + <kbd className="font-sans bg-muted px-1 py-0.5 rounded border border-border/50 text-[10px]">Return</kbd> for new line
@@ -102,7 +102,7 @@ export function ChatInput({
               onClick={() => onSubmit()} 
               disabled={isLoading || (!input.trim() && (!files || files.length === 0))} 
               size="icon" 
-              className="h-8 w-8 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-50 transition-all"
+              className="h-10 w-10 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-50 transition-all"
             >
               <Send className="w-4 h-4" />
             </Button>
