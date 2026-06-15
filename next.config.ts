@@ -9,6 +9,10 @@ const withSerwist = withSerwistInit({
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
+  // Next.js 16 uses Turbopack by default. Adding an empty turbopack config
+  // silences the "webpack config but no turbopack config" build error caused
+  // by the @serwist/next plugin injecting a webpack config internally.
+  turbopack: {},
 };
 
 export default withSerwist(nextConfig);
